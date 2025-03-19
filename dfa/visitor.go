@@ -25,25 +25,27 @@ func (lv *DfaVisitor) VisitArrowFunctionLiteral(n *ast.ArrowFunctionLiteral) {
 func (lv *DfaVisitor) VisitAssignExpression(n *ast.AssignExpression) {
 	currentScope := lv.Ctx.scopeStack[lv.Ctx.scopeDepth]
 	id := n.Left.Expr.(*ast.Identifier).Name
-	// TODO: Find the scope of the assignment.
-	foundDepth := -1
-	conditional := false
+	foundDepth := 0
+	conditional := currentScope.Conditional
+	typ := GlobalScope
+outer:
 	for i := lv.Ctx.scopeDepth; i >= 0; i-- {
-		if !conditional && lv.Ctx.scopeStack[i].Conditional {
+		if lv.Ctx.scopeStack[i].Conditional {
 			conditional = true
 		}
 
-		if _, ok := lv.Ctx.scopeStack[i].Definitions[id]; ok {
-			foundDepth = i
+		if f, ok := lv.Ctx.scopeStack[i].Definitions[id]; ok {
+			for _, x := range f {
+				typ = x.Typ
+				foundDepth = x.Depth
+				break outer
+			}
 		}
 	}
 
-	if foundDepth == -1 {
-		panic("no scope found for assignment")
-	}
-
-	currentScope.AddValue(id, n.Right, !conditional, Assignment, foundDepth)
+	currentScope.AddValue(id, n.Right, !conditional, typ, foundDepth)
 }
+
 func (lv *DfaVisitor) VisitAwaitExpression(n *ast.AwaitExpression) {
 
 	n.VisitChildrenWith(lv)
@@ -407,7 +409,7 @@ func (lv *DfaVisitor) VisitVariableDeclaration(n *ast.VariableDeclaration) {
 	switch n.Token.String() {
 	case "var":
 		if i, ok := n.List[0].Target.Target.(*ast.Identifier); ok {
-			lv.Ctx.scopeStack[lv.Ctx.scopeDepth].AddValue(i.Name, n.List[0].Initializer, true, FunctionScope, lv.Ctx.scopeDepth)
+			lv.Ctx.scopeStack[lv.Ctx.scopeDepth].AddValue(i.Name, n.List[0].Initializer, true, FunctionScope, lv.Ctx.functionScopeDepth)
 			lv.VisitExpression(n.List[0].Initializer)
 		}
 	case "let":

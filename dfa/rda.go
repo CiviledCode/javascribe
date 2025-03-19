@@ -27,12 +27,18 @@ func (s ScopeDefs) AppendScopeDefs(src ScopeDefs) {
 
 var DefCount int64
 
+var Undefined = &ScopeDef{
+	Val:   nil,
+	Typ:   FunctionScope,
+	Count: -1,
+}
+
 type ScopeDefType int
 
 const (
 	BlockScope ScopeDefType = iota
 	FunctionScope
-	Assignment
+	GlobalScope
 )
 
 type ScopeDef struct {
@@ -165,25 +171,30 @@ func (r *rdaContext) popScope() *Scope {
 
 // mergeDown will merge defintions from the scope "a" into the current scope.
 func (r *rdaContext) mergeDown(scopeDepth int, a *Scope) {
+outer:
 	for id, vals := range a.Definitions {
 		currentVals := r.scopeStack[r.scopeDepth].Definitions[id]
 		carryVals := []*ScopeDef{}
 		for _, val := range vals {
 			switch val.Typ {
 			case BlockScope:
-				continue
-			case FunctionScope:
-				if a.FunctionScope {
+				if r.scopeDepth < val.Depth {
 					continue
 				}
 
 				if !r.scopeStack[r.scopeDepth].HasDef(id, val) {
 					carryVals = append(carryVals, val)
 				}
-			case Assignment:
-				// Assignment depths are found when an assignment is hit.
-				if val.Depth < scopeDepth && !r.scopeStack[r.scopeDepth].HasDef(id, val) {
-					// merge down if it's a new assignment and the val expiration depth is lower or equal to current scope depth.
+			case FunctionScope:
+				if a.FunctionScope && r.scopeDepth < val.Depth {
+					continue
+				}
+
+				if !r.scopeStack[r.scopeDepth].HasDef(id, val) {
+					carryVals = append(carryVals, val)
+				}
+			case GlobalScope:
+				if !r.scopeStack[r.scopeDepth].HasDef(id, val) {
 					carryVals = append(carryVals, val)
 				}
 			}
@@ -191,12 +202,14 @@ func (r *rdaContext) mergeDown(scopeDepth int, a *Scope) {
 
 		// Ensure the slice is initialized before appending
 		if currentVals == nil {
-			// Add default undefined value because no values existed before.
-			// TODO: Make undefined block
-			r.scopeStack[r.scopeDepth].Definitions[id] = append(carryVals, &ScopeDef{
-				Val: nil,
-				Typ: FunctionScope,
-			})
+			for _, def := range carryVals {
+				if def == Undefined {
+					r.scopeStack[r.scopeDepth].Definitions[id] = carryVals
+					continue outer
+				}
+			}
+
+			r.scopeStack[r.scopeDepth].Definitions[id] = append(carryVals, Undefined)
 			continue
 		}
 

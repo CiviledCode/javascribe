@@ -10,7 +10,11 @@ import (
 	"github.com/t14raptor/go-fast/parser"
 )
 
-var verifiedTests = []string{"010", "011", "012", "013", "014"}
+var verifiedTests = []string{"010", "011", "012", "013", "014", "015", // 01.
+	"020", "021", "022", "023", "024", "025", "026", // 02.
+}
+
+//var verifiedTests = []string{"026"}
 
 type testResult struct {
 	Identifer string  `json:"id"`
@@ -66,10 +70,19 @@ func TestDFA(t *testing.T) {
 		//rdaCtx.Debug = true
 
 		rdaCtx.Start(a)
+
+		if len(res.Expected) == 0 {
+			t.Fatalf("Test %s JSON invalid", testName)
+		}
+
 		for idx, ud := range rdaCtx.UseDefs {
 			var nums []int64
 			for _, def := range ud.Definitions {
 				nums = append(nums, def.Count)
+			}
+
+			if len(nums) == 0 {
+				nums = []int64{-1}
 			}
 
 			expected := res.Expected[idx]
@@ -92,7 +105,7 @@ func TestDFA(t *testing.T) {
 			t.Logf("PASS: Identifier: %s   Assigns: %v", ud.Usage.Name, nums)
 		}
 
-		t.Logf("Test %s PASSED!", testName)
+		t.Logf("Test %s PASSED!\n\n", testName)
 	}
 }
 
