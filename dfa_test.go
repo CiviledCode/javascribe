@@ -1,0 +1,101 @@
+package main
+
+import (
+	"encoding/json"
+	"io"
+	"os"
+	"testing"
+
+	"github.com/civiledcode/gofast-testing/dfa"
+	"github.com/t14raptor/go-fast/parser"
+)
+
+var verifiedTests = []string{"010", "011", "012", "013", "014"}
+
+type testResult struct {
+	Identifer string  `json:"id"`
+	Assigns   []int64 `json:"assigns"`
+}
+
+type testResults struct {
+	Expected []testResult `json:"expected"`
+}
+
+func TestDFA(t *testing.T) {
+	for _, testName := range verifiedTests {
+		testFile := testName + ".js"
+		testOutput := testName + ".json"
+
+		f, err := os.Open("./js_tests/" + testFile)
+		if err != nil {
+			panic(err)
+		}
+
+		jsCode, err := io.ReadAll(f)
+		if err != nil {
+			panic(err)
+		}
+
+		f.Close()
+
+		f, err = os.Open("./js_tests/" + testOutput)
+		if err != nil {
+			panic(err)
+		}
+
+		results, err := io.ReadAll(f)
+		if err != nil {
+			panic(err)
+		}
+
+		f.Close()
+
+		res := testResults{}
+
+		err = json.Unmarshal(results, &res)
+		if err != nil {
+			panic(err)
+		}
+
+		a, err := parser.ParseFile(string(jsCode))
+		if err != nil {
+			panic(err)
+		}
+
+		rdaCtx := dfa.CreateContextRDA(256)
+		//rdaCtx.Debug = true
+
+		rdaCtx.Start(a)
+		for idx, ud := range rdaCtx.UseDefs {
+			var nums []int64
+			for _, def := range ud.Definitions {
+				nums = append(nums, def.Count)
+			}
+
+			expected := res.Expected[idx]
+
+			if expected.Identifer != ud.Usage.Name {
+				logFail(expected, testResult{Identifer: ud.Usage.Name, Assigns: nums}, t, testName)
+
+			}
+
+			if len(expected.Assigns) != len(nums) {
+				logFail(expected, testResult{Identifer: ud.Usage.Name, Assigns: nums}, t, testName)
+			} else {
+				for x, num := range nums {
+					if num != expected.Assigns[x] {
+						logFail(expected, testResult{Identifer: ud.Usage.Name, Assigns: nums}, t, testName)
+					}
+				}
+			}
+
+			t.Logf("PASS: Identifier: %s   Assigns: %v", ud.Usage.Name, nums)
+		}
+
+		t.Logf("Test %s PASSED!", testName)
+	}
+}
+
+func logFail(expected testResult, got testResult, t *testing.T, testname string) {
+	t.Fatalf("incorrect result from test %s.js:\nexpected: id=%s assigns=%v\ngot:      id=%s assigns=%v", testname, expected.Identifer, expected.Assigns, got.Identifer, got.Assigns)
+}

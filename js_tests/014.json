@@ -1,0 +1,28 @@
+{
+    "expected": [
+        {
+            "id": "x",
+            "assigns": [
+                0
+            ]
+        },
+        {
+            "id": "z",
+            "assigns": [
+                1
+            ]
+        },
+        {
+            "id": "y",
+            "assigns": [
+                2
+            ]
+        },
+        {
+            "id": "x",
+            "assigns": [
+                3
+            ]
+        }
+    ]
+}
