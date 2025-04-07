@@ -62,6 +62,10 @@ func (s *Scope) AddValue(id string, v *ast.Expression, overwrite bool, typ Scope
 		Count: DefCount,
 	}
 
+	if v == nil {
+		val = Undefined
+	}
+
 	DefCount++
 
 	if overwrite {
@@ -90,6 +94,44 @@ func (s *Scope) HasDef(id string, def *ScopeDef) bool {
 	}
 
 	return false
+}
+
+func (s *Scope) RemoveParentDefs(parentScope *Scope) {
+	for id, defs := range s.Definitions {
+		for idx, def := range defs {
+			if parentScope.HasDef(id, def) {
+				s.Definitions[id][idx] = nil
+			}
+		}
+	}
+}
+
+// MergeSameDepth merges defintions from scope A and scope B, storing the definitions in scope A.
+func (s *Scope) MergeSameDepth(b *Scope) {
+	for id, defs := range b.Definitions {
+		s.MergeDefs(defs, id)
+	}
+}
+
+func (s *Scope) MergeDefs(defs []*ScopeDef, id string) {
+	orig, needsCheck := s.Definitions[id]
+	if needsCheck {
+		original := []*ScopeDef{}
+
+		for _, def := range defs {
+			if def == nil {
+				continue
+			}
+
+			if !s.HasDef(id, def) {
+				original = append(original, def)
+			}
+		}
+
+		s.Definitions[id] = append(orig, original...)
+	} else {
+		s.Definitions[id] = defs
+	}
 }
 
 // NewScope creates a new scope with the following params:
@@ -176,6 +218,10 @@ outer:
 		currentVals := r.scopeStack[r.scopeDepth].Definitions[id]
 		carryVals := []*ScopeDef{}
 		for _, val := range vals {
+			if val == nil {
+				continue
+			}
+
 			switch val.Typ {
 			case BlockScope:
 				if r.scopeDepth < val.Depth {
@@ -221,33 +267,23 @@ outer:
 
 }
 
-// mergeSameDepth merges defintions from scope A and scope B, storing the definitions in scope A.
-func (r *rdaContext) mergeSameDepth(a, b *Scope) {
-	for id, defs := range b.Definitions {
-		orig, needsCheck := a.Definitions[id]
-		if needsCheck {
-			original := []*ScopeDef{}
-
-			for _, def := range defs {
-				if !a.HasDef(id, def) {
-					original = append(original, def)
-				}
-			}
-
-			a.Definitions[id] = append(orig, original...)
-		} else {
-			a.Definitions[id] = defs
-		}
-	}
-}
-
-func (r *rdaContext) cutExpiring(defs []*ScopeDef, currentDepth int) []*ScopeDef {
+func (r *rdaContext) findNotExpiring(s *Scope, id string, blockParents bool) []*ScopeDef {
 	result := []*ScopeDef{}
-	for _, v := range defs {
-		// If the depth is
-		if v.Typ != BlockScope && currentDepth >= v.Depth {
-			result = append(result, v)
+	for _, val := range s.Definitions[id] {
+		if val.Typ == GlobalScope {
+			result = append(result, val)
+			continue
 		}
+
+		if blockParents && r.scopeStack[r.scopeDepth].HasDef(id, val) {
+			continue
+		}
+
+		if r.scopeDepth < val.Depth {
+			continue
+		}
+
+		result = append(result, val)
 	}
 
 	return result

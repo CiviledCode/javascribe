@@ -2,15 +2,20 @@
     011: Demonstrates the basic functionality of the let keyword and assignments.
 */
 
-let x = 20; // 0 
+let x;  // 0
+
+x = 20;  // 1
 
 log(x);
 
-x = 50;     // 1
+x = 50;  // 2
 
 log(x);
 
-x = 100;    // 2
-x = 50;     // 3
+let y = 100; // 3
 
-log(x);
+log(y);
+
+y = 50;  // 4
+
+log(y);

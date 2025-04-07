@@ -3,19 +3,25 @@
         {
             "id": "x",
             "assigns": [
-                0
-            ]
-        },
-        {
-            "id": "x",
-            "assigns": [
                 1
             ]
         },
         {
             "id": "x",
             "assigns": [
+                2
+            ]
+        },
+        {
+            "id": "y",
+            "assigns": [
                 3
+            ]
+        },
+        {
+            "id": "y",
+            "assigns": [
+                4
             ]
         }
     ]

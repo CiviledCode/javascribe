@@ -6,15 +6,15 @@ import (
 	"os"
 	"testing"
 
-	"github.com/civiledcode/gofast-testing/dfa"
+	"github.com/civiledcode/javascribe/dfa"
 	"github.com/t14raptor/go-fast/parser"
 )
 
-var verifiedTests = []string{"010", "011", "012", "013", "014", "015", // 01.
-	"020", "021", "022", "023", "024", "025", "026", // 02.
+var testsRan = []string{
+	"010", "011", "012", "013", "014", "015", "016", // 01.
+	"020", "021", "022", "023", "024", "025", "026", "027", "028", "029", // 02.
+	"030", "031", "032", "033", "034", "035", // 03.
 }
-
-//var verifiedTests = []string{"026"}
 
 type testResult struct {
 	Identifer string  `json:"id"`
@@ -26,7 +26,8 @@ type testResults struct {
 }
 
 func TestDFA(t *testing.T) {
-	for _, testName := range verifiedTests {
+	testsRan = []string{"033"}
+	for _, testName := range testsRan {
 		testFile := testName + ".js"
 		testOutput := testName + ".json"
 
@@ -78,6 +79,10 @@ func TestDFA(t *testing.T) {
 		for idx, ud := range rdaCtx.UseDefs {
 			var nums []int64
 			for _, def := range ud.Definitions {
+				if def == nil {
+					continue
+				}
+
 				nums = append(nums, def.Count)
 			}
 

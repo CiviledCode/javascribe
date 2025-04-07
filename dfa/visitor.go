@@ -25,15 +25,14 @@ func (lv *DfaVisitor) VisitArrowFunctionLiteral(n *ast.ArrowFunctionLiteral) {
 func (lv *DfaVisitor) VisitAssignExpression(n *ast.AssignExpression) {
 	currentScope := lv.Ctx.scopeStack[lv.Ctx.scopeDepth]
 	id := n.Left.Expr.(*ast.Identifier).Name
+
+	fmt.Println(n.Operator)
+
 	foundDepth := 0
-	conditional := currentScope.Conditional
+	conditional := false
 	typ := GlobalScope
 outer:
 	for i := lv.Ctx.scopeDepth; i >= 0; i-- {
-		if lv.Ctx.scopeStack[i].Conditional {
-			conditional = true
-		}
-
 		if f, ok := lv.Ctx.scopeStack[i].Definitions[id]; ok {
 			for _, x := range f {
 				typ = x.Typ
@@ -41,13 +40,16 @@ outer:
 				break outer
 			}
 		}
+
+		if lv.Ctx.scopeStack[i].Conditional {
+			conditional = true
+		}
 	}
 
 	currentScope.AddValue(id, n.Right, !conditional, typ, foundDepth)
 }
 
 func (lv *DfaVisitor) VisitAwaitExpression(n *ast.AwaitExpression) {
-
 	n.VisitChildrenWith(lv)
 }
 func (lv *DfaVisitor) VisitBadStatement(n *ast.BadStatement) {
@@ -137,10 +139,30 @@ func (lv *DfaVisitor) VisitEmptyStatement(n *ast.EmptyStatement) {
 
 	n.VisitChildrenWith(lv)
 }
-func (lv *DfaVisitor) VisitExpression(n *ast.Expression) {
 
+func (lv *DfaVisitor) VisitExpression(n *ast.Expression) {
+	if u, ok := n.Expr.(*ast.UpdateExpression); ok {
+		if id, ok := u.Operand.Expr.(*ast.Identifier); ok {
+			foundDepth := 0
+			typ := GlobalScope
+		outer:
+			for i := lv.Ctx.scopeDepth; i >= 0; i-- {
+				if f, ok := lv.Ctx.scopeStack[i].Definitions[id.Name]; ok {
+					for _, x := range f {
+						typ = x.Typ
+						foundDepth = x.Depth
+						break outer
+					}
+				}
+			}
+
+			lv.Ctx.scopeStack[lv.Ctx.scopeDepth].AddValue(id.Name, n, false, typ, foundDepth)
+			return
+		}
+	}
 	n.VisitChildrenWith(lv)
 }
+
 func (lv *DfaVisitor) VisitExpressionStatement(n *ast.ExpressionStatement) {
 
 	n.VisitChildrenWith(lv)
@@ -169,11 +191,25 @@ func (lv *DfaVisitor) VisitForOfStatement(n *ast.ForOfStatement) {
 
 	n.VisitChildrenWith(lv)
 }
+
 func (lv *DfaVisitor) VisitForStatement(n *ast.ForStatement) {
-	forScope := NewScope(true, false)
+	headerScope := NewScope(true, false)
+	lv.Ctx.pushScope(headerScope)
+
+	if n.Initializer != nil {
+		lv.VisitForLoopInitializer(n.Initializer)
+	}
+
+	lv.VisitExpression(n.Update)
+	lv.VisitExpression(n.Test)
+
+	forScope := NewScope(n.Test != nil, false)
 	lv.Ctx.pushScope(forScope)
-	n.VisitChildrenWith(lv)
+	lv.VisitStatement(n.Body)
 	lv.Ctx.popScope()
+	lv.Ctx.popScope()
+
+	forScope.MergeSameDepth(headerScope)
 
 	lv.Ctx.mergeDown(lv.Ctx.scopeDepth+1, forScope)
 }
@@ -208,7 +244,6 @@ func (lv *DfaVisitor) VisitIfStatement(n *ast.IfStatement) {
 	lv.VisitStatement(n.Consequent)
 	lv.Ctx.popScope()
 
-	//currDepth := lv.Ctx.scopeDepth + 1
 	if n.Alternate != nil {
 		var elseScope *Scope
 		var elifScopes []*Scope
@@ -238,11 +273,92 @@ func (lv *DfaVisitor) VisitIfStatement(n *ast.IfStatement) {
 		}
 
 		if elseScope != nil {
-			// Find variables that exist in all scopes.
+			// holds a list of values that exist in the else scope.
+			inElseScope := make([]string, len(elseScope.Definitions))
+			counter := 0
+			for id := range elseScope.Definitions {
+				elseDefs := lv.Ctx.findNotExpiring(elseScope, id, true)
+
+				// No original definitions in else statement.
+				if len(elseDefs) == 0 {
+					continue
+				}
+				inElseScope[counter] = id
+				counter++
+			}
+
+			// Go through all values that exist in the else scope.
+			for _, id := range inElseScope {
+				elseDefs := lv.Ctx.findNotExpiring(elseScope, id, true)
+				inAll := true
+
+				ifDefs := lv.Ctx.findNotExpiring(ifScope, id, true)
+				ifScope.Definitions[id] = ifDefs
+				if len(ifDefs) == 0 {
+					inAll = false
+				}
+
+				for _, elif := range elifScopes {
+					elifDefs := lv.Ctx.findNotExpiring(elif, id, true)
+					if len(elifDefs) == 0 {
+						inAll = false
+					} else {
+						ifScope.MergeDefs(elifDefs, id)
+					}
+				}
+
+				ifScope.MergeDefs(elseDefs, id)
+
+				if inAll {
+					lv.Ctx.scopeStack[lv.Ctx.scopeDepth].Definitions[id] = ifScope.Definitions[id]
+				} else {
+					if _, ok := lv.Ctx.scopeStack[lv.Ctx.scopeDepth].Definitions[id]; ok {
+						lv.Ctx.scopeStack[lv.Ctx.scopeDepth].MergeDefs(ifScope.Definitions[id], id)
+					} else {
+						lv.Ctx.scopeStack[lv.Ctx.scopeDepth].Definitions[id] = append(ifScope.Definitions[id], Undefined)
+					}
+				}
+
+			}
+
+			// holds list of identifers that are defined from within the if and elif statements, but don't exist in else.
+			outElseScope := []string{}
+			// cloud the if scope with all the variable declarations from the elifs and only propogate identifiers that don't exist in the else scope.
+			// append downwards.
+			for _, elif := range elifScopes {
+			def_outer:
+				for id, defs := range elif.Definitions {
+					for _, i := range inElseScope {
+						if i == id {
+							// Variable exists in else scope, so it was handled before.
+							continue def_outer
+						}
+					}
+
+					defs = lv.Ctx.findNotExpiring(elif, id, true)
+
+					if len(defs) == 0 {
+						continue
+					}
+
+					if _, ok := ifScope.Definitions[id]; !ok {
+						ifScope.Definitions[id] = defs
+						outElseScope = append(outElseScope, id)
+					} else {
+						ifScope.MergeDefs(defs, id)
+					}
+				}
+			}
+
+			// merge remaining values down.
+			for _, id := range outElseScope {
+				lv.Ctx.scopeStack[lv.Ctx.scopeDepth].MergeDefs(ifScope.Definitions[id], id)
+			}
+
 		} else {
 			// Because no else, merge else if defs with if defs and merge down.
 			for _, elif := range elifScopes {
-				lv.Ctx.mergeSameDepth(ifScope, elif)
+				ifScope.MergeSameDepth(elif)
 			}
 
 			lv.Ctx.mergeDown(lv.Ctx.scopeDepth+1, ifScope)
@@ -400,30 +516,37 @@ func (lv *DfaVisitor) VisitUnaryExpression(n *ast.UnaryExpression) {
 
 	n.VisitChildrenWith(lv)
 }
+
 func (lv *DfaVisitor) VisitUpdateExpression(n *ast.UpdateExpression) {
 
-	n.VisitChildrenWith(lv)
 }
+
 func (lv *DfaVisitor) VisitVariableDeclaration(n *ast.VariableDeclaration) {
 	// TODO: Declarations with multiple declarations
+
+	val := n.List[0].Initializer
+	if val == nil {
+
+	}
 	switch n.Token.String() {
 	case "var":
 		if i, ok := n.List[0].Target.Target.(*ast.Identifier); ok {
-			lv.Ctx.scopeStack[lv.Ctx.scopeDepth].AddValue(i.Name, n.List[0].Initializer, true, FunctionScope, lv.Ctx.functionScopeDepth)
-			lv.VisitExpression(n.List[0].Initializer)
+			lv.Ctx.scopeStack[lv.Ctx.scopeDepth].AddValue(i.Name, val, true, FunctionScope, lv.Ctx.functionScopeDepth)
 		}
 	case "let":
 		if i, ok := n.List[0].Target.Target.(*ast.Identifier); ok {
 			lv.Ctx.scopeStack[lv.Ctx.scopeDepth].AddValue(i.Name, n.List[0].Initializer, true, BlockScope, lv.Ctx.scopeDepth)
-			lv.VisitExpression(n.List[0].Initializer)
 		}
 	case "const":
 		if i, ok := n.List[0].Target.Target.(*ast.Identifier); ok {
 			lv.Ctx.scopeStack[lv.Ctx.scopeDepth].AddValue(i.Name, n.List[0].Initializer, true, BlockScope, lv.Ctx.scopeDepth)
-			lv.VisitExpression(n.List[0].Initializer)
 		}
 	default:
 		fmt.Println("Didn't find a keyboard")
+	}
+
+	if val != nil {
+		lv.VisitExpression(val)
 	}
 }
 

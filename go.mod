@@ -1,4 +1,4 @@
-module github.com/civiledcode/gofast-testing
+module github.com/civiledcode/javascribe
 
 go 1.23.4
 

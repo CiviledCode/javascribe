@@ -1,16 +1,21 @@
 /*
-    010: Demonstrates the basic functionality of the var keyword.
+    010: Demonstrates the basic functionality of the var keyword and assignments.
 */
 
-var x = 20;  // 0
+var x;  // 0
+
+x = 20;  // 1
 
 log(x);
 
-var x = 50;  // 1
+x = 50;  // 2
 
 log(x);
 
-var x = 100; // 2
-var x = 50;  // 3
+var y = 100; // 3
 
-log(x);
+log(y);
+
+y = 50;  // 4
+
+log(y);

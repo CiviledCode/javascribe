@@ -1,21 +1,23 @@
 {
     "expected": [
         {
-            "id": "y",
+            "id": "i",
             "assigns": [
-                -1
+                1,
+                2
             ]
         },
         {
-            "id": "y",
+            "id": "x",
             "assigns": [
                 0
             ]
         },
         {
-            "id": "z",
+            "id": "i",
             "assigns": [
-                -1
+                1,
+                2
             ]
         }
     ]

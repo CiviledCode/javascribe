@@ -8,3 +8,7 @@ log(y);
 var y = 40; // 0
 
 log(y);
+
+var z;      // 1
+
+log(z);
