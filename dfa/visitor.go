@@ -26,23 +26,25 @@ func (lv *DfaVisitor) VisitAssignExpression(n *ast.AssignExpression) {
 	currentScope := lv.Ctx.scopeStack[lv.Ctx.scopeDepth]
 	id := n.Left.Expr.(*ast.Identifier).Name
 
-	fmt.Println(n.Operator)
-
 	foundDepth := 0
 	conditional := false
+
+	if n.Operator.String() != "=" {
+		conditional = true
+	}
 	typ := GlobalScope
 outer:
 	for i := lv.Ctx.scopeDepth; i >= 0; i-- {
+		if lv.Ctx.scopeStack[i].Conditional && i != lv.Ctx.scopeDepth {
+			conditional = true
+		}
+
 		if f, ok := lv.Ctx.scopeStack[i].Definitions[id]; ok {
 			for _, x := range f {
 				typ = x.Typ
 				foundDepth = x.Depth
 				break outer
 			}
-		}
-
-		if lv.Ctx.scopeStack[i].Conditional {
-			conditional = true
 		}
 	}
 
@@ -193,31 +195,47 @@ func (lv *DfaVisitor) VisitForOfStatement(n *ast.ForOfStatement) {
 }
 
 func (lv *DfaVisitor) VisitForStatement(n *ast.ForStatement) {
-	headerScope := NewScope(true, false)
+	// Header scope
+	headerScope := NewScope(false, false)
 	lv.Ctx.pushScope(headerScope)
 
 	if n.Initializer != nil {
 		lv.VisitForLoopInitializer(n.Initializer)
 	}
 
-	lv.VisitExpression(n.Update)
-	lv.VisitExpression(n.Test)
+	if n.Update.Expr != nil {
+		lv.VisitExpression(n.Update)
+	}
 
-	forScope := NewScope(n.Test != nil, false)
+	// determines if there's a test or not in the for loop.
+	isConditional := false
+	if n.Test.Expr != nil {
+		lv.VisitExpression(n.Test)
+		isConditional = true
+	}
+
+	lv.Ctx.popScope()
+
+	// Create body scope and merge variables from header scope.
+	forScope := NewScope(isConditional, false)
 	lv.Ctx.pushScope(forScope)
-	lv.VisitStatement(n.Body)
-	lv.Ctx.popScope()
-	lv.Ctx.popScope()
-
 	forScope.MergeSameDepth(headerScope)
 
-	lv.Ctx.mergeDown(lv.Ctx.scopeDepth+1, forScope)
+	lv.VisitStatement(n.Body)
+
+	lv.Ctx.popScope()
+
+	if isConditional {
+		forScope.AddUndefined(lv.Ctx.scopeStack[lv.Ctx.scopeDepth])
+	}
+
+	lv.Ctx.mergeDown(lv.Ctx.scopeDepth+1, forScope, isConditional)
 }
 
 func (lv *DfaVisitor) VisitFunctionDeclaration(n *ast.FunctionDeclaration) {
-
 	n.VisitChildrenWith(lv)
 }
+
 func (lv *DfaVisitor) VisitFunctionLiteral(n *ast.FunctionLiteral) {
 	n.VisitChildrenWith(lv)
 }
@@ -361,10 +379,12 @@ func (lv *DfaVisitor) VisitIfStatement(n *ast.IfStatement) {
 				ifScope.MergeSameDepth(elif)
 			}
 
-			lv.Ctx.mergeDown(lv.Ctx.scopeDepth+1, ifScope)
+			ifScope.AddUndefined(lv.Ctx.scopeStack[lv.Ctx.scopeDepth])
+			lv.Ctx.mergeDown(lv.Ctx.scopeDepth+1, ifScope, true)
 		}
 	} else {
-		lv.Ctx.mergeDown(lv.Ctx.scopeDepth+1, ifScope)
+		ifScope.AddUndefined(lv.Ctx.scopeStack[lv.Ctx.scopeDepth])
+		lv.Ctx.mergeDown(lv.Ctx.scopeDepth+1, ifScope, true)
 	}
 }
 
@@ -542,7 +562,7 @@ func (lv *DfaVisitor) VisitVariableDeclaration(n *ast.VariableDeclaration) {
 			lv.Ctx.scopeStack[lv.Ctx.scopeDepth].AddValue(i.Name, n.List[0].Initializer, true, BlockScope, lv.Ctx.scopeDepth)
 		}
 	default:
-		fmt.Println("Didn't find a keyboard")
+		fmt.Println("Didn't find a keyword")
 	}
 
 	if val != nil {

@@ -54,6 +54,23 @@ type Scope struct {
 	Definitions   ScopeDefs
 }
 
+// NewScope creates a new scope.
+// cond depicts if the scope is a conditional scope.
+// funcscope depicts if the scope is a function scope.
+func NewScope(cond bool, funcscope bool) *Scope {
+	return &Scope{
+		Conditional:   cond,
+		FunctionScope: funcscope,
+		Definitions:   make(ScopeDefs),
+	}
+}
+
+// AddValue adds a definition to the scope.
+// id denotes the identifier.
+// v denotes the expression.
+// overwrite denotes if the value overwrites previous declarations in this scope.
+// typ denotes the type of definition (block, function, global)
+// depth is the depth that the declaration expires at.
 func (s *Scope) AddValue(id string, v *ast.Expression, overwrite bool, typ ScopeDefType, depth int) {
 	val := &ScopeDef{
 		Val:   v,
@@ -81,11 +98,13 @@ func (s *Scope) AddValue(id string, v *ast.Expression, overwrite bool, typ Scope
 	s.Definitions[id] = []*ScopeDef{val}
 }
 
+// Get retrieves a list of definitions for an identifier in that scope.
 func (s *Scope) Get(id string) ([]*ScopeDef, bool) {
 	res, ok := s.Definitions[id]
 	return res, ok
 }
 
+// HasDef determines if a ScopeDef exists in this scope or not.
 func (s *Scope) HasDef(id string, def *ScopeDef) bool {
 	for _, d := range s.Definitions[id] {
 		if d == def {
@@ -96,6 +115,8 @@ func (s *Scope) HasDef(id string, def *ScopeDef) bool {
 	return false
 }
 
+// RemoveParentDefs removes all ScopeDefs that exist in the parent scope.
+// This prevents propogating definitions that already exist into the parent scope.
 func (s *Scope) RemoveParentDefs(parentScope *Scope) {
 	for id, defs := range s.Definitions {
 		for idx, def := range defs {
@@ -113,6 +134,8 @@ func (s *Scope) MergeSameDepth(b *Scope) {
 	}
 }
 
+// MergeDefs merges definitions for a given identifier into this scope.
+// This ensures values are not duplicated when merged.
 func (s *Scope) MergeDefs(defs []*ScopeDef, id string) {
 	orig, needsCheck := s.Definitions[id]
 	if needsCheck {
@@ -134,14 +157,14 @@ func (s *Scope) MergeDefs(defs []*ScopeDef, id string) {
 	}
 }
 
-// NewScope creates a new scope with the following params:
-// - cond: is the scope a conditional scope.
-// - funcscope: is the scope a function scope.
-func NewScope(cond bool, funcscope bool) *Scope {
-	return &Scope{
-		Conditional:   cond,
-		FunctionScope: funcscope,
-		Definitions:   make(ScopeDefs),
+// AddUndefined adds Undefined objects to all declarations within this scope.
+// parentScope is used to determine which values were propogated from the parent scope.
+func (s *Scope) AddUndefined(parentScope *Scope) {
+	for id, x := range s.Definitions {
+		// If no value exists in the parent scope, then add undefined.
+		if _, found := parentScope.Get(id); !found && !s.HasDef(id, Undefined) {
+			s.Definitions[id] = append(x, Undefined)
+		}
 	}
 }
 
@@ -212,11 +235,14 @@ func (r *rdaContext) popScope() *Scope {
 }
 
 // mergeDown will merge defintions from the scope "a" into the current scope.
-func (r *rdaContext) mergeDown(scopeDepth int, a *Scope) {
+func (r *rdaContext) mergeDown(scopeDepth int, a *Scope, conditional bool) {
+	parentScope := r.scopeStack[r.scopeDepth]
 outer:
 	for id, vals := range a.Definitions {
-		currentVals := r.scopeStack[r.scopeDepth].Definitions[id]
+
+		currentVals := parentScope.Definitions[id]
 		carryVals := []*ScopeDef{}
+
 		for _, val := range vals {
 			if val == nil {
 				continue
@@ -224,11 +250,13 @@ outer:
 
 			switch val.Typ {
 			case BlockScope:
+				// The value hasn't expired scope.
 				if r.scopeDepth < val.Depth {
 					continue
 				}
 
-				if !r.scopeStack[r.scopeDepth].HasDef(id, val) {
+				// Append definition to scope if it's
+				if !parentScope.HasDef(id, val) || !conditional {
 					carryVals = append(carryVals, val)
 				}
 			case FunctionScope:
@@ -236,11 +264,11 @@ outer:
 					continue
 				}
 
-				if !r.scopeStack[r.scopeDepth].HasDef(id, val) {
+				if !parentScope.HasDef(id, val) || !conditional {
 					carryVals = append(carryVals, val)
 				}
 			case GlobalScope:
-				if !r.scopeStack[r.scopeDepth].HasDef(id, val) {
+				if !parentScope.HasDef(id, val) || !conditional {
 					carryVals = append(carryVals, val)
 				}
 			}
@@ -250,19 +278,23 @@ outer:
 		if currentVals == nil {
 			for _, def := range carryVals {
 				if def == Undefined {
-					r.scopeStack[r.scopeDepth].Definitions[id] = carryVals
+					parentScope.Definitions[id] = carryVals
 					continue outer
 				}
 			}
 
-			r.scopeStack[r.scopeDepth].Definitions[id] = append(carryVals, Undefined)
+			parentScope.Definitions[id] = carryVals
 			continue
 		}
 
-		r.scopeStack[r.scopeDepth].Definitions[id] = append(
-			currentVals,
-			carryVals...,
-		)
+		if !conditional {
+			parentScope.Definitions[id] = carryVals
+		} else {
+			parentScope.Definitions[id] = append(
+				currentVals,
+				carryVals...,
+			)
+		}
 	}
 
 }

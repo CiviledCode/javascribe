@@ -1,5 +1,5 @@
 /*
-    033: Demonstrates for loop with no afterthought.
+    034: Demonstrates for loop with no afterthought.
 */
 for(
     let i = 0;  // 0

@@ -26,7 +26,6 @@ type testResults struct {
 }
 
 func TestDFA(t *testing.T) {
-	testsRan = []string{"033"}
 	for _, testName := range testsRan {
 		testFile := testName + ".js"
 		testOutput := testName + ".json"

@@ -1,9 +1,15 @@
 {
     "expected": [
         {
-            "id": "i",
+            "id": "x",
             "assigns": [
-                0
+                -1
+            ]
+        },
+        {
+            "id": "y",
+            "assigns": [
+                2
             ]
         }
     ]
